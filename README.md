@@ -31,7 +31,7 @@ Default local service paths:
 - Config/env: `~/.config/composer/composer.env`
 - Connector data: `~/.local/share/composer/connectors.json`
 - Unit file: `~/.config/systemd/user/composer.service`
-- URL: `http://127.0.0.1:3000`
+- URL: `http://127.0.0.1:42456`
 
 The installer creates missing `CONNECTOR_ENCRYPTION_KEY` and `COMPOSER_CONNECTOR_ADMIN_TOKEN` values in the env file. Do not commit or print that file.
 
@@ -63,14 +63,14 @@ X-Composer-Admin-Token: <token>
 Start a PKCE/manual callback authorization:
 
 ```bash
-curl -X POST http://localhost:3000/api/connectors/codex/authorizations \
+curl -X POST http://localhost:42456/api/connectors/codex/authorizations \
   -H "Authorization: Bearer $COMPOSER_CONNECTOR_ADMIN_TOKEN"
 ```
 
 Open the returned `authUrl`, complete OpenAI login, then paste the callback URL into:
 
 ```bash
-curl -X POST http://localhost:3000/api/connectors/codex/connections \
+curl -X POST http://localhost:42456/api/connectors/codex/connections \
   -H "Authorization: Bearer $COMPOSER_CONNECTOR_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"authorizationId":"<id>","callbackInput":"<callback-url>"}'
@@ -81,7 +81,7 @@ curl -X POST http://localhost:3000/api/connectors/codex/connections \
 Verify and save a Deepgram API key:
 
 ```bash
-curl -X POST http://localhost:3000/api/connectors/deepgram/connections \
+curl -X POST http://localhost:42456/api/connectors/deepgram/connections \
   -H "Authorization: Bearer $COMPOSER_CONNECTOR_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"apiKey":"<deepgram-api-key>","name":"Deepgram"}'
@@ -90,9 +90,9 @@ curl -X POST http://localhost:3000/api/connectors/deepgram/connections \
 List saved connections:
 
 ```bash
-curl http://localhost:3000/api/connectors/codex/connections \
+curl http://localhost:42456/api/connectors/codex/connections \
   -H "Authorization: Bearer $COMPOSER_CONNECTOR_ADMIN_TOKEN"
 
-curl http://localhost:3000/api/connectors/deepgram/connections \
+curl http://localhost:42456/api/connectors/deepgram/connections \
   -H "Authorization: Bearer $COMPOSER_CONNECTOR_ADMIN_TOKEN"
 ```
