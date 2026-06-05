@@ -1,0 +1,19 @@
+[Unit]
+Description=Composer Next.js app
+Documentation=https://github.com/WilsonLe/composer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__APP_DIR__
+Environment=PATH=__NODE_BIN_DIR__:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=__ENV_PATH__
+ExecStart=__PNPM_BIN__ start
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
