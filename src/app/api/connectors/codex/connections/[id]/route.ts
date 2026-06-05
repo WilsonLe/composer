@@ -1,6 +1,5 @@
 import { z } from "zod"
 
-import { requireConnectorAdmin } from "@/lib/connectors/admin-auth"
 import {
   deleteCodexConnection,
   updateCodexConnection,
@@ -28,12 +27,6 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const unauthorized = requireConnectorAdmin(request)
-
-  if (unauthorized) {
-    return unauthorized
-  }
-
   try {
     const { id } = await params
     const input = updateConnectionSchema.parse(await request.json())
@@ -46,15 +39,9 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const unauthorized = requireConnectorAdmin(request)
-
-  if (unauthorized) {
-    return unauthorized
-  }
-
   try {
     const { id } = await params
     await deleteCodexConnection(id)

@@ -1,4 +1,3 @@
-import { requireConnectorAdmin } from "@/lib/connectors/admin-auth"
 import { getConnectorFailoverPlan } from "@/lib/connectors/store"
 
 export const runtime = "nodejs"
@@ -12,13 +11,7 @@ function errorResponse(error: unknown, fallback: string, status = 400) {
   )
 }
 
-export async function GET(request: Request) {
-  const unauthorized = requireConnectorAdmin(request)
-
-  if (unauthorized) {
-    return unauthorized
-  }
-
+export async function GET() {
   try {
     return Response.json(await getConnectorFailoverPlan())
   } catch (error) {

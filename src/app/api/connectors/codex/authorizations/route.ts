@@ -1,5 +1,4 @@
 import { generateCodexAuthorization } from "@/lib/connectors/openai-codex-oauth"
-import { requireConnectorAdmin } from "@/lib/connectors/admin-auth"
 import { createCodexAuthorizationRecord } from "@/lib/connectors/store"
 
 export const runtime = "nodejs"
@@ -16,13 +15,7 @@ function errorResponse(error: unknown) {
   )
 }
 
-export async function POST(request: Request) {
-  const unauthorized = requireConnectorAdmin(request)
-
-  if (unauthorized) {
-    return unauthorized
-  }
-
+export async function POST() {
   try {
     const authorization = generateCodexAuthorization()
     const record = await createCodexAuthorizationRecord(authorization)

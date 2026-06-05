@@ -1,10 +1,8 @@
 "use client"
 
-import type { FormEvent } from "react"
 import { useEffect, useMemo, useState } from "react"
 import {
   Bot,
-  CheckCircle2,
   Loader2,
   MessageSquareText,
   PlugZap,
@@ -27,7 +25,6 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import {
   Sidebar,
@@ -139,8 +136,6 @@ const EMPTY_PLAN: ConnectorPlan = {
   },
 }
 
-const ADMIN_TOKEN_STORAGE_KEY = "composer.adminToken"
-
 function statusBadgeVariant(status: string) {
   if (status === "connected") {
     return "default" as const
@@ -216,8 +211,6 @@ function connectorRows(plan: ConnectorPlan): ConnectorRow[] {
 
 export function ComposerShell() {
   const [primaryView, setPrimaryView] = useState<PrimaryView>("compose")
-  const [adminToken, setAdminToken] = useState("")
-  const [tokenInput, setTokenInput] = useState("")
   const [plan, setPlan] = useState<ConnectorPlan>(EMPTY_PLAN)
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
@@ -225,33 +218,18 @@ export function ComposerShell() {
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [composePrompt, setComposePrompt] = useState("")
 
-  const hasAdminToken = adminToken.trim().length > 0
   const rows = useMemo(() => connectorRows(plan), [plan])
 
   useEffect(() => {
-    queueMicrotask(() => {
-      const saved = window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) || ""
-      setAdminToken(saved)
-      setTokenInput(saved)
-    })
-  }, [])
-
-  useEffect(() => {
-    if (adminToken) {
-      void loadPlan()
-    }
+    void loadPlan()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminToken])
+  }, [])
 
   async function connectorRequest<TResponse>(
     path: string,
     options: RequestInit = {}
   ) {
     const headers = new Headers(options.headers)
-
-    if (adminToken) {
-      headers.set("authorization", `Bearer ${adminToken}`)
-    }
 
     if (options.body && !headers.has("content-type")) {
       headers.set("content-type", "application/json")
@@ -313,22 +291,6 @@ export function ComposerShell() {
     }
   }
 
-  function saveAdminToken(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const nextToken = tokenInput.trim()
-
-    if (nextToken) {
-      window.localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, nextToken)
-    } else {
-      window.localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY)
-      setPlan(EMPTY_PLAN)
-    }
-
-    setAdminToken(nextToken)
-    setNotice(nextToken ? "Admin token saved locally in this browser." : "")
-    setError("")
-  }
-
   async function updateConnection(
     kind: ConnectorKind,
     connection: ConnectionBase,
@@ -373,13 +335,9 @@ export function ComposerShell() {
       <ComposerSidebar
         activeView={primaryView}
         connectorCount={rows.length}
-        hasAdminToken={hasAdminToken}
         loading={loading}
         onRefresh={() => void loadPlan()}
-        onSaveAdminToken={saveAdminToken}
         onViewChange={setPrimaryView}
-        tokenInput={tokenInput}
-        onTokenInputChange={setTokenInput}
       />
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
@@ -414,7 +372,6 @@ export function ComposerShell() {
           ) : (
             <ConnectorsTableView
               busyAction={busyAction}
-              hasAdminToken={hasAdminToken}
               loading={loading}
               rows={rows}
               onDelete={deleteConnection}
@@ -431,23 +388,15 @@ export function ComposerShell() {
 function ComposerSidebar({
   activeView,
   connectorCount,
-  hasAdminToken,
   loading,
   onRefresh,
-  onSaveAdminToken,
-  onTokenInputChange,
   onViewChange,
-  tokenInput,
 }: {
   activeView: PrimaryView
   connectorCount: number
-  hasAdminToken: boolean
   loading: boolean
   onRefresh: () => void
-  onSaveAdminToken: (event: FormEvent<HTMLFormElement>) => void
-  onTokenInputChange: (value: string) => void
   onViewChange: (view: PrimaryView) => void
-  tokenInput: string
 }) {
   const { setOpenMobile } = useSidebar()
 
@@ -508,44 +457,26 @@ function ComposerSidebar({
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="pb-4 group-data-[collapsible=icon]:hidden">
-        <form className="flex flex-col gap-3 px-2" onSubmit={onSaveAdminToken}>
-          <FieldGroup className="gap-3">
-            <Field>
-              <FieldLabel htmlFor="admin-token">Admin token</FieldLabel>
-              <Input
-                id="admin-token"
-                autoComplete="off"
-                placeholder="COMPOSER_CONNECTOR_ADMIN_TOKEN"
-                type="password"
-                value={tokenInput}
-                onChange={(event) => onTokenInputChange(event.target.value)}
-              />
-              <FieldDescription>
-                Stored in this browser only. Never displayed by the app.
-              </FieldDescription>
-            </Field>
-          </FieldGroup>
-          <div className="grid grid-cols-2 gap-2">
-            <Button size="xs" type="submit">
-              <CheckCircle2 data-icon="inline-start" />
-              Save
-            </Button>
-            <Button
-              disabled={loading || !hasAdminToken}
-              onClick={onRefresh}
-              size="xs"
-              type="button"
-              variant="outline"
-            >
-              {loading ? (
-                <Loader2 className="animate-spin" data-icon="inline-start" />
-              ) : (
-                <RefreshCw data-icon="inline-start" />
-              )}
-              Sync
-            </Button>
-          </div>
-        </form>
+        <div className="flex flex-col gap-3 px-2 text-xs text-muted-foreground">
+          <p>
+            Local no-auth mode. Keep Composer bound to 127.0.0.1 unless the
+            connector APIs are protected elsewhere.
+          </p>
+          <Button
+            disabled={loading}
+            onClick={onRefresh}
+            size="xs"
+            type="button"
+            variant="outline"
+          >
+            {loading ? (
+              <Loader2 className="animate-spin" data-icon="inline-start" />
+            ) : (
+              <RefreshCw data-icon="inline-start" />
+            )}
+            Sync
+          </Button>
+        </div>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
@@ -611,7 +542,6 @@ function ComposeView({
 
 function ConnectorsTableView({
   busyAction,
-  hasAdminToken,
   loading,
   onDelete,
   onRefreshCodex,
@@ -619,7 +549,6 @@ function ConnectorsTableView({
   rows,
 }: {
   busyAction: string | null
-  hasAdminToken: boolean
   loading: boolean
   onDelete: (kind: ConnectorKind, connection: ConnectionBase) => void
   onRefreshCodex: (connection: CodexConnection) => void
@@ -675,9 +604,7 @@ function ConnectorsTableView({
                 >
                   {loading
                     ? "Loading connectors…"
-                    : hasAdminToken
-                      ? "No connectors yet. Add Codex or Deepgram credentials through the local connector APIs."
-                      : "Save the local Composer admin token in the sidebar to load connector rows."}
+                    : "No connectors yet. Add Codex or Deepgram credentials through the local connector APIs."}
                 </TableCell>
               </TableRow>
             )}
