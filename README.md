@@ -2,7 +2,7 @@
 
 Mobile-first Next.js + shadcn app for Composer.
 
-The `/` page uses a shadcn sidebar with two primary sections: **Compose** and **Connectors**. Compose is the future drafting surface, and Connectors is a table-first readiness view for Codex and Deepgram credentials. The writing runtime is intentionally disabled until the Pi-agent composing slice lands.
+The `/` page uses a shadcn sidebar with two primary sections: **Compose** and **Connectors**. Compose is split between writing and AI chat history panels. Connectors is a table-first readiness view for Codex and Deepgram credentials.
 
 ## Development
 
