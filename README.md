@@ -1,8 +1,8 @@
 # Composer
 
-Initial Next.js + shadcn app for Composer.
+Mobile-first Next.js + shadcn app for Composer.
 
-The first-pass UI is intentionally just the centered `/` page text: `composer`.
+The `/` page includes the Composer drafting surface plus connector menus for Codex and Deepgram setup. The writing runtime is intentionally disabled until the Pi-agent composing slice lands.
 
 ## Development
 
@@ -37,7 +37,10 @@ The installer creates missing `CONNECTOR_ENCRYPTION_KEY` and `COMPOSER_CONNECTOR
 
 Future Pi sessions can load the project skill at `.pi/skills/manage-composer-server/SKILL.md` for service management.
 
-## Connector backend foundation
+## Connector UI and backend foundation
+
+Open `http://127.0.0.1:42456/`, choose **Connectors**, and paste the local `COMPOSER_CONNECTOR_ADMIN_TOKEN` from your environment file. The browser stores that token in local storage under `composer.adminToken` and sends it as a bearer token to the local connector APIs; the app does not render the token back to the page.
+
 
 Connector credentials are stored in a local encrypted JSON file at `.data/connectors.json` by default in development. The systemd service stores them at `~/.local/share/composer/connectors.json`. Both paths are outside git tracking.
 
@@ -87,12 +90,17 @@ curl -X POST http://localhost:42456/api/connectors/deepgram/connections \
   -d '{"apiKey":"<deepgram-api-key>","name":"Deepgram"}'
 ```
 
-List saved connections:
+List saved connections and failover readiness:
 
 ```bash
+curl http://localhost:42456/api/connectors \
+  -H "Authorization: Bearer $COMPOSER_CONNECTOR_ADMIN_TOKEN"
+
 curl http://localhost:42456/api/connectors/codex/connections \
   -H "Authorization: Bearer $COMPOSER_CONNECTOR_ADMIN_TOKEN"
 
 curl http://localhost:42456/api/connectors/deepgram/connections \
   -H "Authorization: Bearer $COMPOSER_CONNECTOR_ADMIN_TOKEN"
 ```
+
+Manage failover settings with `PATCH /api/connectors/{codex|deepgram}/connections/{id}` and JSON fields such as `enabled` and `priority`. Composer treats the first enabled, connected provider by ascending `priority` as active; remaining enabled, connected providers are fallbacks. Delete saved credentials with `DELETE /api/connectors/{codex|deepgram}/connections/{id}`.

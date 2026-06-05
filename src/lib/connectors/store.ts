@@ -21,6 +21,7 @@ import {
 const STORE_VERSION = 1
 const CODEX_AUTHORIZATION_TTL_MS = 10 * 60 * 1000
 const ENCRYPTION_ALGORITHM = "aes-256-gcm"
+const DEFAULT_CONNECTOR_PRIORITY = 100
 
 type EncryptedSecret = {
   algorithm: typeof ENCRYPTION_ALGORITHM
@@ -45,10 +46,12 @@ type StoredCodexConnection = {
   chatgptPlanType?: string
   createdAt: string
   defaultModel: string
+  enabled: boolean
   id: string
   lastTokenRefreshAt?: string
   name: string
   openaiEmail: string
+  priority: number
   refreshToken?: EncryptedSecret
   status: "connected" | "needs_reconnect" | "refresh_failed"
   statusMessage: string
@@ -61,8 +64,10 @@ type StoredDeepgramConnection = {
   apiKey: EncryptedSecret
   createdAt: string
   defaultModel: string
+  enabled: boolean
   id: string
   name: string
+  priority: number
   projects?: DeepgramProjectsResponse
   providerType: typeof DEEPGRAM_PROVIDER_TYPE
   status: "connected" | "needs_reconnect"
@@ -95,6 +100,43 @@ export type PublicDeepgramConnection = Omit<StoredDeepgramConnection, "apiKey">
 
 function nowISO() {
   return new Date().toISOString()
+}
+
+function normalizeConnectorPriority(priority?: number) {
+  const normalized =
+    typeof priority === "number" && Number.isFinite(priority)
+      ? priority
+      : DEFAULT_CONNECTOR_PRIORITY
+
+  return Math.max(1, Math.min(999, Math.round(normalized)))
+}
+
+function nextConnectorPriority(connections: Array<{ priority?: number }>) {
+  const priorities = connections.map((connection) =>
+    normalizeConnectorPriority(connection.priority)
+  )
+
+  if (!priorities.length) {
+    return 10
+  }
+
+  return Math.min(999, Math.max(...priorities) + 10)
+}
+
+function byFailoverPriority<T extends { createdAt: string; id: string; priority?: number }>(
+  left: T,
+  right: T
+) {
+  return (
+    normalizeConnectorPriority(left.priority) -
+      normalizeConnectorPriority(right.priority) ||
+    new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime() ||
+    left.id.localeCompare(right.id)
+  )
+}
+
+function usableConnector(connection: { enabled?: boolean; status: string }) {
+  return (connection.enabled ?? true) && connection.status === "connected"
 }
 
 function emptyStore(): ConnectorStoreFile {
@@ -241,10 +283,12 @@ function publicCodexConnection(
     chatgptPlanType: connection.chatgptPlanType,
     createdAt: connection.createdAt,
     defaultModel: connection.defaultModel,
+    enabled: connection.enabled ?? true,
     id: connection.id,
     lastTokenRefreshAt: connection.lastTokenRefreshAt,
     name: connection.name,
     openaiEmail: connection.openaiEmail,
+    priority: normalizeConnectorPriority(connection.priority),
     status: connection.status,
     statusMessage: connection.statusMessage,
     tokenExpiresAt: connection.tokenExpiresAt,
@@ -259,8 +303,10 @@ function publicDeepgramConnection(
     accountIdentifier: connection.accountIdentifier,
     createdAt: connection.createdAt,
     defaultModel: connection.defaultModel,
+    enabled: connection.enabled ?? true,
     id: connection.id,
     name: connection.name,
+    priority: normalizeConnectorPriority(connection.priority),
     projects: connection.projects,
     providerType: connection.providerType,
     status: connection.status,
@@ -323,7 +369,9 @@ async function readCodexAuthorization(store: ConnectorStoreFile, id: string) {
 export async function listCodexConnections() {
   const store = await readStore()
 
-  return store.codexConnections.map(publicCodexConnection)
+  return [...store.codexConnections]
+    .sort(byFailoverPriority)
+    .map(publicCodexConnection)
 }
 
 export async function upsertCodexConnection({
@@ -345,11 +393,13 @@ export async function upsertCodexConnection({
     chatgptAccountId: tokens.chatgptAccountId,
     chatgptPlanType: tokens.planType,
     createdAt: existing?.createdAt || timestamp,
-    defaultModel: CODEX_DEFAULT_MODEL,
+    defaultModel: existing?.defaultModel || CODEX_DEFAULT_MODEL,
+    enabled: existing?.enabled ?? true,
     id: existing?.id || crypto.randomUUID(),
     lastTokenRefreshAt: timestamp,
     name: name?.trim() || existing?.name || tokens.email,
     openaiEmail: tokens.email,
+    priority: existing?.priority ?? nextConnectorPriority(store.codexConnections),
     refreshToken: tokens.refreshToken
       ? encryptSecret(tokens.refreshToken)
       : existing?.refreshToken,
@@ -452,7 +502,9 @@ export async function refreshStoredCodexConnection(id: string) {
 export async function listDeepgramConnections() {
   const store = await readStore()
 
-  return store.deepgramConnections.map(publicDeepgramConnection)
+  return [...store.deepgramConnections]
+    .sort(byFailoverPriority)
+    .map(publicDeepgramConnection)
 }
 
 export async function createDeepgramConnection({
@@ -476,8 +528,10 @@ export async function createDeepgramConnection({
     apiKey: encryptSecret(apiKey),
     createdAt: timestamp,
     defaultModel: DEEPGRAM_DEFAULT_MODEL,
+    enabled: true,
     id: crypto.randomUUID(),
     name: displayName,
+    priority: nextConnectorPriority(store.deepgramConnections),
     projects,
     providerType: DEEPGRAM_PROVIDER_TYPE,
     status: "connected",
@@ -490,4 +544,139 @@ export async function createDeepgramConnection({
   await writeStore(store)
 
   return publicDeepgramConnection(record)
+}
+
+type ConnectorConnectionUpdate = {
+  defaultModel?: string
+  enabled?: boolean
+  name?: string
+  priority?: number
+}
+
+function applyConnectionUpdate(
+  connection: {
+    defaultModel: string
+    enabled?: boolean
+    name: string
+    priority?: number
+    updatedAt: string
+  },
+  input: ConnectorConnectionUpdate
+) {
+  if (input.defaultModel !== undefined) {
+    connection.defaultModel = input.defaultModel.trim()
+  }
+
+  if (input.enabled !== undefined) {
+    connection.enabled = input.enabled
+  }
+
+  if (input.name !== undefined) {
+    connection.name = input.name.trim()
+  }
+
+  if (input.priority !== undefined) {
+    connection.priority = normalizeConnectorPriority(input.priority)
+  }
+
+  connection.updatedAt = nowISO()
+}
+
+export async function updateCodexConnection(
+  id: string,
+  input: ConnectorConnectionUpdate
+) {
+  const store = await readStore()
+  const connection = store.codexConnections.find(
+    (candidate) => candidate.id === id
+  )
+
+  if (!connection) {
+    throw new Error("Codex connection was not found.")
+  }
+
+  applyConnectionUpdate(connection, input)
+  await writeStore(store)
+
+  return publicCodexConnection(connection)
+}
+
+export async function deleteCodexConnection(id: string) {
+  const store = await readStore()
+  const nextConnections = store.codexConnections.filter(
+    (connection) => connection.id !== id
+  )
+
+  if (nextConnections.length === store.codexConnections.length) {
+    throw new Error("Codex connection was not found.")
+  }
+
+  store.codexConnections = nextConnections
+  await writeStore(store)
+}
+
+export async function updateDeepgramConnection(
+  id: string,
+  input: ConnectorConnectionUpdate
+) {
+  const store = await readStore()
+  const connection = store.deepgramConnections.find(
+    (candidate) => candidate.id === id
+  )
+
+  if (!connection) {
+    throw new Error("Deepgram connection was not found.")
+  }
+
+  applyConnectionUpdate(connection, input)
+  await writeStore(store)
+
+  return publicDeepgramConnection(connection)
+}
+
+export async function deleteDeepgramConnection(id: string) {
+  const store = await readStore()
+  const nextConnections = store.deepgramConnections.filter(
+    (connection) => connection.id !== id
+  )
+
+  if (nextConnections.length === store.deepgramConnections.length) {
+    throw new Error("Deepgram connection was not found.")
+  }
+
+  store.deepgramConnections = nextConnections
+  await writeStore(store)
+}
+
+function failoverPlan<T extends { enabled: boolean; id: string; status: string }>(
+  connections: T[]
+) {
+  const active = connections.find(usableConnector) || null
+
+  return {
+    active,
+    disabled: connections.filter((connection) => !connection.enabled),
+    fallbacks: connections.filter(
+      (connection) =>
+        connection.enabled && connection.status === "connected" &&
+        connection.id !== active?.id
+    ),
+    needsAttention: connections.filter(
+      (connection) => connection.enabled && connection.status !== "connected"
+    ),
+  }
+}
+
+export async function getConnectorFailoverPlan() {
+  const codexConnections = await listCodexConnections()
+  const deepgramConnections = await listDeepgramConnections()
+
+  return {
+    composer: failoverPlan(codexConnections),
+    connections: {
+      codex: codexConnections,
+      deepgram: deepgramConnections,
+    },
+    speechToText: failoverPlan(deepgramConnections),
+  }
 }
