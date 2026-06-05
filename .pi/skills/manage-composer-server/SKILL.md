@@ -37,12 +37,11 @@ scripts/composer-service.sh start
 Do not print secrets from `~/.config/composer/composer.env`. The installer creates missing values for:
 
 - `CONNECTOR_ENCRYPTION_KEY`
-- `COMPOSER_CONNECTOR_ADMIN_TOKEN`
 - `CONNECTOR_STORE_PATH`
 - `PORT`
 - `COMPOSER_HOSTNAME`
 
-If the service starts but connector API calls return 401/503, inspect whether `COMPOSER_CONNECTOR_ADMIN_TOKEN` exists in the env file without echoing the token.
+Composer is a local single-user app with no app-level auth. Connector APIs are unauthenticated, so keep the service bound to `127.0.0.1` unless another trusted layer protects the app.
 
 ## Safe workflow
 

@@ -1,4 +1,3 @@
-import { requireConnectorAdmin } from "@/lib/connectors/admin-auth"
 import { refreshStoredCodexConnection } from "@/lib/connectors/store"
 
 export const runtime = "nodejs"
@@ -16,15 +15,9 @@ function errorResponse(error: unknown) {
 }
 
 export async function POST(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const unauthorized = requireConnectorAdmin(request)
-
-  if (unauthorized) {
-    return unauthorized
-  }
-
   try {
     const { id } = await params
     const connection = await refreshStoredCodexConnection(id)

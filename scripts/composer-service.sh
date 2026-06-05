@@ -106,7 +106,6 @@ CONNECTOR_STORE_PATH=$DATA_DIR/connectors.json
 COMPOSER_CONFIG_DIR=$CONFIG_DIR
 COMPOSER_DATA_DIR=$DATA_DIR
 CONNECTOR_ENCRYPTION_KEY=$(random_secret)
-COMPOSER_CONNECTOR_ADMIN_TOKEN=$(random_secret)
 EOF
     return
   fi
@@ -121,7 +120,6 @@ EOF
   ensure_env_assignment COMPOSER_CONFIG_DIR "$CONFIG_DIR"
   ensure_env_assignment COMPOSER_DATA_DIR "$DATA_DIR"
   ensure_env_assignment CONNECTOR_ENCRYPTION_KEY "$(random_secret)"
-  ensure_env_assignment COMPOSER_CONNECTOR_ADMIN_TOKEN "$(random_secret)"
 }
 
 render_unit_text() {

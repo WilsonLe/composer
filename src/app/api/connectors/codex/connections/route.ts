@@ -1,6 +1,5 @@
 import { z } from "zod"
 
-import { requireConnectorAdmin } from "@/lib/connectors/admin-auth"
 import { exchangeCodexAuthorizationCode } from "@/lib/connectors/openai-codex-oauth"
 import {
   completeCodexConnection,
@@ -24,23 +23,11 @@ function errorResponse(error: unknown, fallback: string, status = 400) {
   )
 }
 
-export async function GET(request: Request) {
-  const unauthorized = requireConnectorAdmin(request)
-
-  if (unauthorized) {
-    return unauthorized
-  }
-
+export async function GET() {
   return Response.json({ connections: await listCodexConnections() })
 }
 
 export async function POST(request: Request) {
-  const unauthorized = requireConnectorAdmin(request)
-
-  if (unauthorized) {
-    return unauthorized
-  }
-
   try {
     const input = completeCodexConnectionSchema.parse(await request.json())
     const connection = await completeCodexConnection({

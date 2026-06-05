@@ -1,6 +1,5 @@
 import { z } from "zod"
 
-import { requireConnectorAdmin } from "@/lib/connectors/admin-auth"
 import {
   summarizeDeepgramProjectList,
   verifyDeepgramApiKey,
@@ -27,23 +26,11 @@ function errorResponse(error: unknown, fallback: string, status = 400) {
   )
 }
 
-export async function GET(request: Request) {
-  const unauthorized = requireConnectorAdmin(request)
-
-  if (unauthorized) {
-    return unauthorized
-  }
-
+export async function GET() {
   return Response.json({ connections: await listDeepgramConnections() })
 }
 
 export async function POST(request: Request) {
-  const unauthorized = requireConnectorAdmin(request)
-
-  if (unauthorized) {
-    return unauthorized
-  }
-
   try {
     const input = createDeepgramConnectionSchema.parse(await request.json())
     const verification = await verifyDeepgramApiKey(input.apiKey, request.signal)
