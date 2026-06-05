@@ -98,6 +98,22 @@ export type PublicCodexConnection = Omit<
 
 export type PublicDeepgramConnection = Omit<StoredDeepgramConnection, "apiKey">
 
+export type CodexRuntimeCredentials = {
+  access: string
+  accountId: string
+  connectionId: string
+  defaultModel: string
+  email: string
+  expires: number
+  refresh: string
+}
+
+export type DeepgramRuntimeCredentials = {
+  apiKey: string
+  connectionId: string
+  defaultModel: string
+}
+
 function nowISO() {
   return new Date().toISOString()
 }
@@ -664,6 +680,76 @@ function failoverPlan<T extends { enabled: boolean; id: string; status: string }
     needsAttention: connections.filter(
       (connection) => connection.enabled && connection.status !== "connected"
     ),
+  }
+}
+
+export async function getActiveCodexRuntimeCredentials(): Promise<CodexRuntimeCredentials> {
+  let store = await readStore()
+  let connection = [...store.codexConnections]
+    .sort(byFailoverPriority)
+    .find(usableConnector)
+
+  if (!connection) {
+    throw new Error("Connect Codex before starting a Pi session.")
+  }
+
+  const expiresAt = connection.tokenExpiresAt
+    ? new Date(connection.tokenExpiresAt).getTime()
+    : Date.now() + 60 * 60 * 1000
+
+  if (expiresAt <= Date.now() + 5 * 60 * 1000 && connection.refreshToken) {
+    await refreshStoredCodexConnection(connection.id)
+    store = await readStore()
+    connection = store.codexConnections.find(
+      (candidate) => candidate.id === connection?.id
+    )
+  }
+
+  if (!connection || !usableConnector(connection)) {
+    throw new Error("Reconnect Codex before starting a Pi session.")
+  }
+
+  const access = decryptSecret(connection.accessToken)
+  const refresh = decryptSecret(connection.refreshToken)
+  const accountId = connection.chatgptAccountId
+
+  if (!access || !refresh || !accountId) {
+    throw new Error("Reconnect Codex before starting a Pi session.")
+  }
+
+  return {
+    access,
+    accountId,
+    connectionId: connection.id,
+    defaultModel: connection.defaultModel || CODEX_DEFAULT_MODEL,
+    email: connection.openaiEmail,
+    expires: connection.tokenExpiresAt
+      ? new Date(connection.tokenExpiresAt).getTime()
+      : Date.now() + 60 * 60 * 1000,
+    refresh,
+  }
+}
+
+export async function getActiveDeepgramRuntimeCredentials(): Promise<DeepgramRuntimeCredentials> {
+  const store = await readStore()
+  const connection = [...store.deepgramConnections]
+    .sort(byFailoverPriority)
+    .find(usableConnector)
+
+  if (!connection) {
+    throw new Error("Connect Deepgram before using speech input.")
+  }
+
+  const apiKey = decryptSecret(connection.apiKey)
+
+  if (!apiKey) {
+    throw new Error("Reconnect Deepgram before using speech input.")
+  }
+
+  return {
+    apiKey,
+    connectionId: connection.id,
+    defaultModel: connection.defaultModel || DEEPGRAM_DEFAULT_MODEL,
   }
 }
 

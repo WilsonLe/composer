@@ -1,8 +1,12 @@
 allowBuilds:
+  '@google/genai': false
   msw: false
+  protobufjs: false
   sharp: false
   unrs-resolver: false
 ignoredBuiltDependencies:
+  - '@google/genai'
   - msw
+  - protobufjs
   - sharp
   - unrs-resolver
