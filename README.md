@@ -2,7 +2,7 @@
 
 Mobile-first Next.js + shadcn app for Composer.
 
-The `/` page includes the Composer drafting surface plus connector menus for Codex and Deepgram setup. The writing runtime is intentionally disabled until the Pi-agent composing slice lands.
+The `/` page uses a shadcn sidebar with two primary sections: **Compose** and **Connectors**. Compose is the future drafting surface, and Connectors is a table-first readiness view for Codex and Deepgram credentials. The writing runtime is intentionally disabled until the Pi-agent composing slice lands.
 
 ## Development
 
@@ -39,8 +39,7 @@ Future Pi sessions can load the project skill at `.pi/skills/manage-composer-ser
 
 ## Connector UI and backend foundation
 
-Open `http://127.0.0.1:42456/`, choose **Connectors**, and paste the local `COMPOSER_CONNECTOR_ADMIN_TOKEN` from your environment file. The browser stores that token in local storage under `composer.adminToken` and sends it as a bearer token to the local connector APIs; the app does not render the token back to the page.
-
+Open `http://127.0.0.1:42456/`, use the sidebar to choose **Connectors**, and paste the local `COMPOSER_CONNECTOR_ADMIN_TOKEN` in the sidebar footer. The browser stores that token in local storage under `composer.adminToken` and sends it as a bearer token to the local connector APIs; the app does not render the token back to the page.
 
 Connector credentials are stored in a local encrypted JSON file at `.data/connectors.json` by default in development. The systemd service stores them at `~/.local/share/composer/connectors.json`. Both paths are outside git tracking.
 
