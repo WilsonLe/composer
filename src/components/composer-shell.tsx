@@ -2,17 +2,22 @@
 
 import Link from "next/link"
 import type { FormEvent } from "react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
+  Bot,
+  Check,
   ExternalLink,
   Loader2,
   MessageSquareText,
+  Mic,
   PlugZap,
   Plus,
   RefreshCw,
+  Send,
   SquarePen,
   Star,
   Trash2,
+  X,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -66,6 +71,11 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import type {
+  ComposeEditProposal,
+  ComposeSessionMessage,
+  ComposeSessionRecord,
+} from "@/lib/composer/types"
 
 type PrimaryView = "compose" | "connectors"
 type ConnectorKind = "codex" | "deepgram"
@@ -118,6 +128,15 @@ type CodexAuthorization = {
   expiresAt: string
   id: string
   redirectUri: string
+}
+
+type DeepgramTranscriptionResult = {
+  confidence?: number
+  detectedLanguage?: string
+  duration?: number
+  model: string
+  requestID?: string
+  transcript: string
 }
 
 type CodexConnectorRow = {
@@ -243,12 +262,21 @@ export function ComposerShell({ activeView }: { activeView: PrimaryView }) {
   const [deepgramName, setDeepgramName] = useState("")
   const [deepgramAccount, setDeepgramAccount] = useState("")
   const [deepgramApiKey, setDeepgramApiKey] = useState("")
+  const [composeSession, setComposeSession] =
+    useState<ComposeSessionRecord | null>(null)
+  const [composeSessionLoading, setComposeSessionLoading] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
+  const [pendingTranscript, setPendingTranscript] = useState("")
+  const [typedChatDraft, setTypedChatDraft] = useState("")
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const recordingChunksRef = useRef<Blob[]>([])
 
   const rows = useMemo(() => connectorRows(plan), [plan])
   const viewLabel = activeView === "compose" ? "Compose" : "Connectors"
 
   useEffect(() => {
     void loadPlan()
+    void loadComposeSessions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -258,7 +286,11 @@ export function ComposerShell({ activeView }: { activeView: PrimaryView }) {
   ) {
     const headers = new Headers(options.headers)
 
-    if (options.body && !headers.has("content-type")) {
+    if (
+      options.body &&
+      !(options.body instanceof FormData) &&
+      !headers.has("content-type")
+    ) {
       headers.set("content-type", "application/json")
     }
 
@@ -313,6 +345,210 @@ export function ComposerShell({ activeView }: { activeView: PrimaryView }) {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function loadComposeSessions() {
+    setComposeSessionLoading(true)
+
+    try {
+      const payload = await connectorRequest<{ sessions: ComposeSessionRecord[] }>(
+        "/api/compose/sessions"
+      )
+      setComposeSession(payload.sessions[0] || null)
+    } catch (loadError) {
+      toast.error(
+        loadError instanceof Error
+          ? loadError.message
+          : "Could not load Pi sessions."
+      )
+    } finally {
+      setComposeSessionLoading(false)
+    }
+  }
+
+  async function startComposeSession() {
+    await runAction("compose:start", async () => {
+      const session = await connectorRequest<ComposeSessionRecord>(
+        "/api/compose/sessions",
+        { method: "POST" }
+      )
+      setComposeSession(session)
+      setPendingTranscript("")
+      toast.success("Pi session started")
+    })
+  }
+
+  async function sendComposeMessage({
+    confirmed,
+    content,
+    source,
+  }: {
+    confirmed?: boolean
+    content: string
+    source: "transcript" | "typed"
+  }) {
+    if (!composeSession) {
+      toast.error("Start a Pi session first.")
+      return
+    }
+
+    const actionId =
+      source === "typed"
+        ? "compose:typed"
+        : confirmed
+          ? "compose:confirm"
+          : "compose:transcript"
+
+    await runAction(actionId, async () => {
+      const session = await connectorRequest<ComposeSessionRecord>(
+        `/api/compose/sessions/${composeSession.id}/messages`,
+        {
+          body: JSON.stringify({
+            confirmed,
+            content,
+            currentText: composeDraft,
+            source,
+          }),
+          method: "POST",
+        }
+      )
+      setComposeSession(session)
+
+      if (source === "typed") {
+        setTypedChatDraft("")
+      } else if (confirmed) {
+        setPendingTranscript("")
+      } else {
+        setPendingTranscript(content)
+      }
+    })
+  }
+
+  async function submitRecording(audio: Blob) {
+    if (!composeSession) {
+      toast.error("Start a Pi session first.")
+      return
+    }
+
+    await runAction("compose:recording", async () => {
+      const body = new FormData()
+      body.set("audio", audio, "composer-recording.webm")
+      const transcription = await connectorRequest<DeepgramTranscriptionResult>(
+        `/api/compose/sessions/${composeSession.id}/transcriptions`,
+        {
+          body,
+          method: "POST",
+        }
+      )
+
+      await sendComposeMessage({
+        content: transcription.transcript,
+        source: "transcript",
+      })
+    })
+  }
+
+  async function toggleRecording() {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop()
+      return
+    }
+
+    if (!composeSession) {
+      toast.error("Start a Pi session first.")
+      return
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || !("MediaRecorder" in window)) {
+      toast.error("Speech recording is not available in this browser.")
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      recordingChunksRef.current = []
+      mediaRecorderRef.current = recorder
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordingChunksRef.current.push(event.data)
+        }
+      }
+      recorder.onstop = () => {
+        setIsRecording(false)
+        stream.getTracks().forEach((track) => track.stop())
+        const audio = new Blob(recordingChunksRef.current, {
+          type: recorder.mimeType || "audio/webm",
+        })
+        recordingChunksRef.current = []
+        mediaRecorderRef.current = null
+
+        if (audio.size === 0) {
+          toast.error("No audio was recorded.")
+          return
+        }
+
+        void submitRecording(audio)
+      }
+      recorder.start()
+      setIsRecording(true)
+    } catch (recordingError) {
+      toast.error(
+        recordingError instanceof Error
+          ? recordingError.message
+          : "Could not start recording."
+      )
+    }
+  }
+
+  async function sendTypedChat(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await sendComposeMessage({ content: typedChatDraft, source: "typed" })
+  }
+
+  async function confirmPendingTranscript() {
+    await sendComposeMessage({
+      confirmed: true,
+      content: pendingTranscript,
+      source: "transcript",
+    })
+  }
+
+  async function acceptProposal(proposal: ComposeEditProposal) {
+    if (!composeSession) {
+      return
+    }
+
+    await runAction(`compose:accept:${proposal.id}`, async () => {
+      const payload = await connectorRequest<{
+        appliedText: string
+        session: ComposeSessionRecord
+      }>(
+        `/api/compose/sessions/${composeSession.id}/proposals/${proposal.id}/accept`,
+        {
+          body: JSON.stringify({ currentText: composeDraft }),
+          method: "POST",
+        }
+      )
+      setComposeDraft(payload.appliedText)
+      setComposeSession(payload.session)
+      toast.success("Applied")
+    })
+  }
+
+  async function rejectProposal(proposal: ComposeEditProposal) {
+    if (!composeSession) {
+      return
+    }
+
+    await runAction(`compose:reject:${proposal.id}`, async () => {
+      const payload = await connectorRequest<{ session: ComposeSessionRecord }>(
+        `/api/compose/sessions/${composeSession.id}/proposals/${proposal.id}/reject`,
+        { method: "POST" }
+      )
+      setComposeSession(payload.session)
+      toast.success("Rejected")
+    })
   }
 
   async function updateConnection(
@@ -433,9 +669,23 @@ export function ComposerShell({ activeView }: { activeView: PrimaryView }) {
         <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 sm:p-6">
           {activeView === "compose" ? (
             <ComposeView
+              busyAction={busyAction}
               composeDraft={composeDraft}
+              composeSession={composeSession}
+              composeSessionLoading={composeSessionLoading}
+              isRecording={isRecording}
+              pendingTranscript={pendingTranscript}
+              typedChatDraft={typedChatDraft}
+              onAcceptProposal={acceptProposal}
               onComposeDraftChange={setComposeDraft}
+              onConfirmTranscript={confirmPendingTranscript}
               onNewCompose={() => setComposeDraft("")}
+              onRejectProposal={rejectProposal}
+              onStartPiSession={startComposeSession}
+              onToggleRecording={toggleRecording}
+              onTypedChatDraftChange={setTypedChatDraft}
+              onTypedChatSubmit={sendTypedChat}
+              onClearPendingTranscript={() => setPendingTranscript("")}
             />
           ) : (
             <ConnectorsTableView
@@ -543,14 +793,46 @@ function ComposerSidebar({
 }
 
 function ComposeView({
+  busyAction,
   composeDraft,
+  composeSession,
+  composeSessionLoading,
+  isRecording,
+  onAcceptProposal,
+  onClearPendingTranscript,
   onComposeDraftChange,
+  onConfirmTranscript,
   onNewCompose,
+  onRejectProposal,
+  onStartPiSession,
+  onToggleRecording,
+  onTypedChatDraftChange,
+  onTypedChatSubmit,
+  pendingTranscript,
+  typedChatDraft,
 }: {
+  busyAction: string | null
   composeDraft: string
+  composeSession: ComposeSessionRecord | null
+  composeSessionLoading: boolean
+  isRecording: boolean
+  onAcceptProposal: (proposal: ComposeEditProposal) => void
+  onClearPendingTranscript: () => void
   onComposeDraftChange: (value: string) => void
+  onConfirmTranscript: () => void
   onNewCompose: () => void
+  onRejectProposal: (proposal: ComposeEditProposal) => void
+  onStartPiSession: () => void
+  onToggleRecording: () => void
+  onTypedChatDraftChange: (value: string) => void
+  onTypedChatSubmit: (event: FormEvent<HTMLFormElement>) => void
+  pendingTranscript: string
+  typedChatDraft: string
 }) {
+  const pendingProposals = composeSession?.proposals.filter(
+    (proposal) => proposal.status === "pending"
+  )
+
   return (
     <section className="grid min-h-[calc(100svh-6.5rem)] min-w-0 grid-rows-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:grid-rows-1">
       <section className="flex min-h-0 min-w-0 flex-col pb-4 lg:pb-0 lg:pr-6">
@@ -580,13 +862,227 @@ function ComposeView({
       <Separator className="lg:hidden" />
       <Separator className="hidden lg:block" orientation="vertical" />
       <section className="flex min-h-0 min-w-0 flex-col pt-4 lg:pt-0 lg:pl-6">
-        <header className="px-1 pb-3 text-xs font-semibold tracking-wider uppercase">
-          AI Chat history
+        <header className="flex items-center justify-between gap-2 px-1 pb-3">
+          <div className="flex min-w-0 flex-col">
+            <span className="text-xs font-semibold tracking-wider uppercase">
+              AI Chat history
+            </span>
+            {composeSession ? (
+              <span className="truncate font-mono text-[10px] text-muted-foreground">
+                {composeSession.id}
+              </span>
+            ) : null}
+          </div>
+          <Button
+            aria-label="Start Pi session"
+            title="Start Pi session"
+            type="button"
+            size="icon-sm"
+            variant={composeSession ? "outline" : "default"}
+            disabled={busyAction === "compose:start"}
+            onClick={onStartPiSession}
+          >
+            {busyAction === "compose:start" ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <Bot />
+            )}
+          </Button>
         </header>
         <Separator />
-        <div aria-label="AI Chat history" className="min-h-0 flex-1" />
+        <div
+          aria-label="AI Chat history"
+          className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-4"
+        >
+          {composeSessionLoading ? (
+            <p className="px-1 text-sm text-muted-foreground">
+              Loading Pi sessions…
+            </p>
+          ) : null}
+          {!composeSession && !composeSessionLoading ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
+              <Bot className="size-8" />
+              <p>Start a Composer-managed Pi session.</p>
+              <Button
+                type="button"
+                size="icon-sm"
+                aria-label="Start Pi session"
+                onClick={onStartPiSession}
+              >
+                <Bot />
+              </Button>
+            </div>
+          ) : null}
+          {composeSession?.messages.map((message) => (
+            <ComposeMessageBubble key={message.id} message={message} />
+          ))}
+          {pendingProposals?.map((proposal) => (
+            <ComposeProposalCard
+              busyAction={busyAction}
+              key={proposal.id}
+              proposal={proposal}
+              onAccept={onAcceptProposal}
+              onReject={onRejectProposal}
+            />
+          ))}
+        </div>
+        {composeSession ? (
+          <div className="flex flex-col gap-3 border-t pt-3">
+            {pendingTranscript ? (
+              <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-3 text-xs">
+                <span className="font-medium">Confirm STT intent</span>
+                <p className="text-muted-foreground">{pendingTranscript}</p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={busyAction === "compose:confirm"}
+                    onClick={onConfirmTranscript}
+                  >
+                    <Check data-icon="inline-start" />
+                    Confirm
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={onClearPendingTranscript}
+                  >
+                    <X data-icon="inline-start" />
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+            <div className="flex items-end gap-2">
+              <Button
+                aria-label={isRecording ? "Stop recording" : "Record speech"}
+                title={isRecording ? "Stop recording" : "Record speech"}
+                type="button"
+                size="icon-sm"
+                variant={isRecording ? "destructive" : "outline"}
+                disabled={busyAction === "compose:recording"}
+                onClick={onToggleRecording}
+              >
+                {busyAction === "compose:recording" ? (
+                  <Loader2 className="animate-spin" />
+                ) : isRecording ? (
+                  <X />
+                ) : (
+                  <Mic />
+                )}
+              </Button>
+              <form className="flex min-w-0 flex-1 gap-2" onSubmit={onTypedChatSubmit}>
+                <Input
+                  aria-label="Typed local note"
+                  placeholder="Typed note (not sent to Pi)"
+                  value={typedChatDraft}
+                  onChange={(event) => onTypedChatDraftChange(event.target.value)}
+                />
+                <Button
+                  aria-label="Save typed note"
+                  title="Save typed note"
+                  type="submit"
+                  size="icon-sm"
+                  variant="outline"
+                  disabled={busyAction === "compose:typed" || !typedChatDraft.trim()}
+                >
+                  {busyAction === "compose:typed" ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Send />
+                  )}
+                </Button>
+              </form>
+            </div>
+          </div>
+        ) : null}
       </section>
     </section>
+  )
+}
+
+function ComposeMessageBubble({ message }: { message: ComposeSessionMessage }) {
+  const isAssistant = message.role === "assistant"
+  const label = isAssistant
+    ? "Pi"
+    : message.source === "typed"
+      ? "Typed note"
+      : "Transcript"
+
+  return (
+    <article
+      className={`max-w-[90%] rounded-md border px-3 py-2 text-sm ${
+        isAssistant ? "bg-muted/40" : "ml-auto bg-background"
+      }`}
+    >
+      <div className="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <span>{label}</span>
+        <time>{friendlyDate(message.createdAt)}</time>
+      </div>
+      <p className="whitespace-pre-wrap">{message.content}</p>
+    </article>
+  )
+}
+
+function ComposeProposalCard({
+  busyAction,
+  onAccept,
+  onReject,
+  proposal,
+}: {
+  busyAction: string | null
+  onAccept: (proposal: ComposeEditProposal) => void
+  onReject: (proposal: ComposeEditProposal) => void
+  proposal: ComposeEditProposal
+}) {
+  const acceptAction = `compose:accept:${proposal.id}`
+  const rejectAction = `compose:reject:${proposal.id}`
+
+  return (
+    <article className="rounded-md border bg-muted/20 p-3 text-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-medium">{proposal.summary}</p>
+          <p className="text-xs text-muted-foreground">
+            {proposal.edits.length} ranged edit{proposal.edits.length === 1 ? "" : "s"}
+          </p>
+        </div>
+        <Badge variant="secondary">pending</Badge>
+      </div>
+      <pre className="mt-3 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-background p-2 text-xs">
+        {proposal.afterText || "(empty text)"}
+      </pre>
+      <div className="mt-3 flex gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled={busyAction === acceptAction}
+          onClick={() => onAccept(proposal)}
+        >
+          {busyAction === acceptAction ? (
+            <Loader2 className="animate-spin" data-icon="inline-start" />
+          ) : (
+            <Check data-icon="inline-start" />
+          )}
+          Accept
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={busyAction === rejectAction}
+          onClick={() => onReject(proposal)}
+        >
+          {busyAction === rejectAction ? (
+            <Loader2 className="animate-spin" data-icon="inline-start" />
+          ) : (
+            <X data-icon="inline-start" />
+          )}
+          Reject
+        </Button>
+      </div>
+    </article>
   )
 }
 
