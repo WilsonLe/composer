@@ -11,11 +11,35 @@ pnpm install
 pnpm dev
 ```
 
-Copy `.env.example` to `.env.local` before using connector APIs.
+Copy `.env.example` to `.env.local` before using connector APIs in development.
+
+## Local systemd service
+
+Composer includes a user-level systemd manager script:
+
+```bash
+scripts/composer-service.sh doctor
+scripts/composer-service.sh install
+scripts/composer-service.sh status
+scripts/composer-service.sh logs
+```
+
+`install` runs `pnpm install --frozen-lockfile`, builds the app, renders `~/.config/systemd/user/composer.service`, and starts `composer.service` with `systemctl --user`.
+
+Default local service paths:
+
+- Config/env: `~/.config/composer/composer.env`
+- Connector data: `~/.local/share/composer/connectors.json`
+- Unit file: `~/.config/systemd/user/composer.service`
+- URL: `http://127.0.0.1:3000`
+
+The installer creates missing `CONNECTOR_ENCRYPTION_KEY` and `COMPOSER_CONNECTOR_ADMIN_TOKEN` values in the env file. Do not commit or print that file.
+
+Future Pi sessions can load the project skill at `.pi/skills/manage-composer-server/SKILL.md` for service management.
 
 ## Connector backend foundation
 
-Connector credentials are stored in a local encrypted JSON file at `.data/connectors.json` by default. `.data/` is gitignored.
+Connector credentials are stored in a local encrypted JSON file at `.data/connectors.json` by default in development. The systemd service stores them at `~/.local/share/composer/connectors.json`. Both paths are outside git tracking.
 
 Required environment variables:
 
