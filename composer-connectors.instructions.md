@@ -12,3 +12,4 @@ applyTo: "src/lib/connectors/**,src/app/api/connectors/**,src/components/compose
 - Existing stored connections may be missing `enabled` or `priority`; public reads should default them to enabled with a safe normalized priority.
 - Keep the primary Composer shell as a shadcn sidebar with exactly two top-level options: Compose and Connectors.
 - Keep the Connectors view table-first, mirroring WilsonLe/app table density; avoid nested provider setup cards in the main Connectors content.
+- Keep connector creation behind the `+ Connector` sheet so the main Connectors page remains header plus table.

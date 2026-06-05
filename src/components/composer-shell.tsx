@@ -1,8 +1,9 @@
 "use client"
 
+import type { FormEvent } from "react"
 import { useEffect, useMemo, useState } from "react"
 import {
-  Bot,
+  ExternalLink,
   Loader2,
   MessageSquareText,
   PlugZap,
@@ -13,23 +14,29 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
   Field,
-  FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -99,6 +106,14 @@ type ConnectorPlan = {
     deepgram: DeepgramConnection[]
   }
   speechToText: FailoverPlan<DeepgramConnection>
+}
+
+type CodexAuthorization = {
+  authUrl: string
+  createdAt: string
+  expiresAt: string
+  id: string
+  redirectUri: string
 }
 
 type CodexConnectorRow = {
@@ -216,7 +231,17 @@ export function ComposerShell() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
-  const [composePrompt, setComposePrompt] = useState("")
+  const [composeDraft, setComposeDraft] = useState("")
+  const [connectorSheetOpen, setConnectorSheetOpen] = useState(false)
+  const [connectorProvider, setConnectorProvider] =
+    useState<ConnectorKind>("codex")
+  const [codexName, setCodexName] = useState("")
+  const [codexAuthorization, setCodexAuthorization] =
+    useState<CodexAuthorization | null>(null)
+  const [codexCallbackInput, setCodexCallbackInput] = useState("")
+  const [deepgramName, setDeepgramName] = useState("")
+  const [deepgramAccount, setDeepgramAccount] = useState("")
+  const [deepgramApiKey, setDeepgramApiKey] = useState("")
 
   const rows = useMemo(() => connectorRows(plan), [plan])
 
@@ -304,7 +329,7 @@ export function ComposerShell() {
           method: "PATCH",
         }
       )
-      setNotice("Connector failover settings updated.")
+      setNotice("Connector updated.")
       await loadPlan()
     })
   }
@@ -325,7 +350,72 @@ export function ComposerShell() {
         `/api/connectors/codex/connections/${connection.id}/refresh`,
         { method: "POST" }
       )
-      setNotice(`${connection.name} token refreshed.`)
+      setNotice(`${connection.name} refreshed.`)
+      await loadPlan()
+    })
+  }
+
+  async function startCodexAuthorization(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await runAction("codex:start", async () => {
+      const authorization = await connectorRequest<CodexAuthorization>(
+        "/api/connectors/codex/authorizations",
+        { method: "POST" }
+      )
+      setCodexAuthorization(authorization)
+      setCodexCallbackInput("")
+      setNotice("Codex login ready.")
+    })
+  }
+
+  async function completeCodexAuthorization(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!codexAuthorization) {
+      setError("Start Codex login first.")
+      return
+    }
+
+    await runAction("codex:complete", async () => {
+      await connectorRequest<CodexConnection>(
+        "/api/connectors/codex/connections",
+        {
+          body: JSON.stringify({
+            authorizationId: codexAuthorization.id,
+            callbackInput: codexCallbackInput,
+            name: codexName || undefined,
+          }),
+          method: "POST",
+        }
+      )
+      setCodexAuthorization(null)
+      setCodexCallbackInput("")
+      setCodexName("")
+      setConnectorSheetOpen(false)
+      setNotice("Codex added.")
+      await loadPlan()
+    })
+  }
+
+  async function createDeepgramConnection(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await runAction("deepgram:create", async () => {
+      await connectorRequest<DeepgramConnection>(
+        "/api/connectors/deepgram/connections",
+        {
+          body: JSON.stringify({
+            accountIdentifier: deepgramAccount || undefined,
+            apiKey: deepgramApiKey,
+            name: deepgramName || undefined,
+          }),
+          method: "POST",
+        }
+      )
+      setDeepgramAccount("")
+      setDeepgramApiKey("")
+      setDeepgramName("")
+      setConnectorSheetOpen(false)
+      setNotice("Deepgram added.")
       await loadPlan()
     })
   }
@@ -335,8 +425,6 @@ export function ComposerShell() {
       <ComposerSidebar
         activeView={primaryView}
         connectorCount={rows.length}
-        loading={loading}
-        onRefresh={() => void loadPlan()}
         onViewChange={setPrimaryView}
       />
       <SidebarInset>
@@ -349,7 +437,7 @@ export function ComposerShell() {
             <span className="capitalize">{primaryView}</span>
           </div>
         </header>
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 p-4 sm:p-6">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 sm:p-6">
           {(notice || error) && (
             <div
               className={cn(
@@ -366,14 +454,15 @@ export function ComposerShell() {
 
           {primaryView === "compose" ? (
             <ComposeView
-              composePrompt={composePrompt}
-              onComposePromptChange={setComposePrompt}
+              composeDraft={composeDraft}
+              onComposeDraftChange={setComposeDraft}
             />
           ) : (
             <ConnectorsTableView
               busyAction={busyAction}
               loading={loading}
               rows={rows}
+              onAddConnector={() => setConnectorSheetOpen(true)}
               onDelete={deleteConnection}
               onRefreshCodex={refreshCodex}
               onUpdate={updateConnection}
@@ -381,6 +470,27 @@ export function ComposerShell() {
           )}
         </main>
       </SidebarInset>
+      <ConnectorSheet
+        busyAction={busyAction}
+        codexAuthorization={codexAuthorization}
+        codexCallbackInput={codexCallbackInput}
+        codexName={codexName}
+        deepgramAccount={deepgramAccount}
+        deepgramApiKey={deepgramApiKey}
+        deepgramName={deepgramName}
+        onCodexCallbackInputChange={setCodexCallbackInput}
+        onCodexNameChange={setCodexName}
+        onCompleteCodexAuthorization={completeCodexAuthorization}
+        onCreateDeepgram={createDeepgramConnection}
+        onDeepgramAccountChange={setDeepgramAccount}
+        onDeepgramApiKeyChange={setDeepgramApiKey}
+        onDeepgramNameChange={setDeepgramName}
+        onOpenChange={setConnectorSheetOpen}
+        onProviderChange={setConnectorProvider}
+        onStartCodexAuthorization={startCodexAuthorization}
+        open={connectorSheetOpen}
+        provider={connectorProvider}
+      />
     </SidebarProvider>
   )
 }
@@ -388,14 +498,10 @@ export function ComposerShell() {
 function ComposerSidebar({
   activeView,
   connectorCount,
-  loading,
-  onRefresh,
   onViewChange,
 }: {
   activeView: PrimaryView
   connectorCount: number
-  loading: boolean
-  onRefresh: () => void
   onViewChange: (view: PrimaryView) => void
 }) {
   const { setOpenMobile } = useSidebar()
@@ -456,86 +562,37 @@ function ComposerSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="pb-4 group-data-[collapsible=icon]:hidden">
-        <div className="flex flex-col gap-3 px-2 text-xs text-muted-foreground">
-          <p>
-            Local no-auth mode. Keep Composer bound to 127.0.0.1 unless the
-            connector APIs are protected elsewhere.
-          </p>
-          <Button
-            disabled={loading}
-            onClick={onRefresh}
-            size="xs"
-            type="button"
-            variant="outline"
-          >
-            {loading ? (
-              <Loader2 className="animate-spin" data-icon="inline-start" />
-            ) : (
-              <RefreshCw data-icon="inline-start" />
-            )}
-            Sync
-          </Button>
-        </div>
-      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   )
 }
 
 function ComposeView({
-  composePrompt,
-  onComposePromptChange,
+  composeDraft,
+  onComposeDraftChange,
 }: {
-  composePrompt: string
-  onComposePromptChange: (value: string) => void
+  composeDraft: string
+  onComposeDraftChange: (value: string) => void
 }) {
   return (
-    <section className="flex min-w-0 flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Compose</h1>
-        <p className="text-sm text-muted-foreground">
-          Draft messages here once the Pi-agent writing runtime lands. For now,
-          this space stays local and connector readiness lives in the sidebar
-          table view.
-        </p>
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MessageSquareText />
-            Compose message
-          </CardTitle>
-          <CardDescription>
-            The writing runtime is intentionally disabled until the Composer
-            Pi-agent session slice is implemented.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="compose-prompt">What should Composer write?</FieldLabel>
-              <Textarea
-                id="compose-prompt"
-                className="min-h-48"
-                placeholder="Example: Write a concise reply confirming the meeting time and asking for the agenda."
-                value={composePrompt}
-                onChange={(event) => onComposePromptChange(event.target.value)}
-              />
-              <FieldDescription>
-                Nothing is sent to a model yet. This is the future composing
-                surface.
-              </FieldDescription>
-            </Field>
-          </FieldGroup>
-          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-            <Button disabled type="button">
-              <Bot data-icon="inline-start" />
-              Compose with Pi agent
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+    <section className="grid min-h-[calc(100svh-6.5rem)] min-w-0 grid-rows-2 gap-4 lg:grid-cols-2 lg:grid-rows-1">
+      <section className="flex min-h-0 min-w-0 flex-col border bg-card">
+        <header className="border-b px-4 py-3 text-xs font-semibold tracking-wider uppercase">
+          Writing
+        </header>
+        <Textarea
+          aria-label="Writing"
+          className="min-h-0 flex-1 resize-none border-0 p-4 focus-visible:border-transparent"
+          value={composeDraft}
+          onChange={(event) => onComposeDraftChange(event.target.value)}
+        />
+      </section>
+      <section className="flex min-h-0 min-w-0 flex-col border bg-card">
+        <header className="border-b px-4 py-3 text-xs font-semibold tracking-wider uppercase">
+          AI Chat history
+        </header>
+        <div aria-label="AI Chat history" className="min-h-0 flex-1" />
+      </section>
     </section>
   )
 }
@@ -543,6 +600,7 @@ function ComposeView({
 function ConnectorsTableView({
   busyAction,
   loading,
+  onAddConnector,
   onDelete,
   onRefreshCodex,
   onUpdate,
@@ -550,6 +608,7 @@ function ConnectorsTableView({
 }: {
   busyAction: string | null
   loading: boolean
+  onAddConnector: () => void
   onDelete: (kind: ConnectorKind, connection: ConnectionBase) => void
   onRefreshCodex: (connection: CodexConnection) => void
   onUpdate: (
@@ -560,13 +619,12 @@ function ConnectorsTableView({
   rows: ConnectorRow[]
 }) {
   return (
-    <section className="flex min-w-0 flex-col gap-6">
-      <div className="flex flex-col gap-1">
+    <section className="flex min-w-0 flex-col gap-4">
+      <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Connectors</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage Codex and Deepgram connector readiness. Secrets stay encrypted
-          on the local server and are never displayed.
-        </p>
+        <Button type="button" onClick={onAddConnector}>
+          + Connector
+        </Button>
       </div>
 
       <div className="min-w-0 overflow-x-auto rounded-none border">
@@ -602,9 +660,7 @@ function ConnectorsTableView({
                   className="h-24 text-center text-muted-foreground"
                   colSpan={7}
                 >
-                  {loading
-                    ? "Loading connectors…"
-                    : "No connectors yet. Add Codex or Deepgram credentials through the local connector APIs."}
+                  {loading ? "Loading connectors…" : "No connectors yet."}
                 </TableCell>
               </TableRow>
             )}
@@ -728,5 +784,234 @@ function ConnectorTableRow({
         </div>
       </TableCell>
     </TableRow>
+  )
+}
+
+function ConnectorSheet({
+  busyAction,
+  codexAuthorization,
+  codexCallbackInput,
+  codexName,
+  deepgramAccount,
+  deepgramApiKey,
+  deepgramName,
+  onCodexCallbackInputChange,
+  onCodexNameChange,
+  onCompleteCodexAuthorization,
+  onCreateDeepgram,
+  onDeepgramAccountChange,
+  onDeepgramApiKeyChange,
+  onDeepgramNameChange,
+  onOpenChange,
+  onProviderChange,
+  onStartCodexAuthorization,
+  open,
+  provider,
+}: {
+  busyAction: string | null
+  codexAuthorization: CodexAuthorization | null
+  codexCallbackInput: string
+  codexName: string
+  deepgramAccount: string
+  deepgramApiKey: string
+  deepgramName: string
+  onCodexCallbackInputChange: (value: string) => void
+  onCodexNameChange: (value: string) => void
+  onCompleteCodexAuthorization: (event: FormEvent<HTMLFormElement>) => void
+  onCreateDeepgram: (event: FormEvent<HTMLFormElement>) => void
+  onDeepgramAccountChange: (value: string) => void
+  onDeepgramApiKeyChange: (value: string) => void
+  onDeepgramNameChange: (value: string) => void
+  onOpenChange: (open: boolean) => void
+  onProviderChange: (value: ConnectorKind) => void
+  onStartCodexAuthorization: (event: FormEvent<HTMLFormElement>) => void
+  open: boolean
+  provider: ConnectorKind
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>Connector</SheetTitle>
+        </SheetHeader>
+        <div className="flex flex-col gap-8 px-8 pb-8">
+          <FieldGroup className="gap-6">
+            <Field>
+              <FieldLabel>Provider</FieldLabel>
+              <Select value={provider} onValueChange={onProviderChange}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="codex">OpenAI Codex</SelectItem>
+                    <SelectItem value="deepgram">Deepgram</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          </FieldGroup>
+
+          {provider === "codex" ? (
+            <CodexConnectorForm
+              authorization={codexAuthorization}
+              busyAction={busyAction}
+              callbackInput={codexCallbackInput}
+              name={codexName}
+              onCallbackInputChange={onCodexCallbackInputChange}
+              onCompleteAuthorization={onCompleteCodexAuthorization}
+              onNameChange={onCodexNameChange}
+              onStartAuthorization={onStartCodexAuthorization}
+            />
+          ) : (
+            <DeepgramConnectorForm
+              accountIdentifier={deepgramAccount}
+              apiKey={deepgramApiKey}
+              busyAction={busyAction}
+              name={deepgramName}
+              onAccountIdentifierChange={onDeepgramAccountChange}
+              onApiKeyChange={onDeepgramApiKeyChange}
+              onCreate={onCreateDeepgram}
+              onNameChange={onDeepgramNameChange}
+            />
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function CodexConnectorForm({
+  authorization,
+  busyAction,
+  callbackInput,
+  name,
+  onCallbackInputChange,
+  onCompleteAuthorization,
+  onNameChange,
+  onStartAuthorization,
+}: {
+  authorization: CodexAuthorization | null
+  busyAction: string | null
+  callbackInput: string
+  name: string
+  onCallbackInputChange: (value: string) => void
+  onCompleteAuthorization: (event: FormEvent<HTMLFormElement>) => void
+  onNameChange: (value: string) => void
+  onStartAuthorization: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  return (
+    <div className="flex flex-col gap-6">
+      <form className="flex flex-col gap-5" onSubmit={onStartAuthorization}>
+        <FieldGroup className="gap-5">
+          <Field>
+            <FieldLabel htmlFor="codex-name">Name</FieldLabel>
+            <Input
+              id="codex-name"
+              value={name}
+              onChange={(event) => onNameChange(event.target.value)}
+            />
+          </Field>
+        </FieldGroup>
+        <Button disabled={busyAction === "codex:start"} type="submit">
+          {busyAction === "codex:start" ? (
+            <Loader2 className="animate-spin" data-icon="inline-start" />
+          ) : null}
+          Start Codex login
+        </Button>
+      </form>
+
+      {authorization ? (
+        <form className="flex flex-col gap-5" onSubmit={onCompleteAuthorization}>
+          <Button asChild type="button" variant="outline">
+            <a href={authorization.authUrl} target="_blank" rel="noreferrer">
+              <ExternalLink data-icon="inline-start" />
+              Open Codex login
+            </a>
+          </Button>
+          <FieldGroup className="gap-5">
+            <Field>
+              <FieldLabel htmlFor="codex-callback">Callback URL</FieldLabel>
+              <Textarea
+                id="codex-callback"
+                className="min-h-28"
+                value={callbackInput}
+                onChange={(event) =>
+                  onCallbackInputChange(event.target.value)
+                }
+              />
+            </Field>
+          </FieldGroup>
+          <Button
+            disabled={busyAction === "codex:complete" || !callbackInput}
+            type="submit"
+          >
+            {busyAction === "codex:complete" ? (
+              <Loader2 className="animate-spin" data-icon="inline-start" />
+            ) : null}
+            Complete Codex login
+          </Button>
+        </form>
+      ) : null}
+    </div>
+  )
+}
+
+function DeepgramConnectorForm({
+  accountIdentifier,
+  apiKey,
+  busyAction,
+  name,
+  onAccountIdentifierChange,
+  onApiKeyChange,
+  onCreate,
+  onNameChange,
+}: {
+  accountIdentifier: string
+  apiKey: string
+  busyAction: string | null
+  name: string
+  onAccountIdentifierChange: (value: string) => void
+  onApiKeyChange: (value: string) => void
+  onCreate: (event: FormEvent<HTMLFormElement>) => void
+  onNameChange: (value: string) => void
+}) {
+  return (
+    <form className="flex flex-col gap-5" onSubmit={onCreate}>
+      <FieldGroup className="gap-5">
+        <Field>
+          <FieldLabel htmlFor="deepgram-name">Name</FieldLabel>
+          <Input
+            id="deepgram-name"
+            value={name}
+            onChange={(event) => onNameChange(event.target.value)}
+          />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="deepgram-account">Account</FieldLabel>
+          <Input
+            id="deepgram-account"
+            value={accountIdentifier}
+            onChange={(event) => onAccountIdentifierChange(event.target.value)}
+          />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="deepgram-api-key">API key</FieldLabel>
+          <Input
+            id="deepgram-api-key"
+            autoComplete="off"
+            type="password"
+            value={apiKey}
+            onChange={(event) => onApiKeyChange(event.target.value)}
+          />
+        </Field>
+      </FieldGroup>
+      <Button disabled={busyAction === "deepgram:create" || !apiKey} type="submit">
+        {busyAction === "deepgram:create" ? (
+          <Loader2 className="animate-spin" data-icon="inline-start" />
+        ) : null}
+        Save Deepgram
+      </Button>
+    </form>
   )
 }
