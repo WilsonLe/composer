@@ -10,3 +10,5 @@ applyTo: "src/lib/connectors/**,src/app/api/connectors/**,src/components/compose
 - Connector failover order is ascending `priority`; the first enabled, `connected` provider is active and remaining enabled, `connected` providers are fallbacks.
 - Existing stored connections may be missing `enabled` or `priority`; public reads should default them to enabled with a safe normalized priority.
 - The browser UI may persist the admin token in local storage under `composer.adminToken`, but must not render or log the token value.
+- Keep the primary Composer shell as a shadcn sidebar with exactly two top-level options: Compose and Connectors.
+- Keep the Connectors view table-first, mirroring WilsonLe/app table density; avoid nested provider setup cards in the main Connectors content.
