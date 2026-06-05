@@ -1,5 +1,5 @@
-import { ComposerShell } from "@/components/composer-shell"
+import { redirect } from "next/navigation"
 
 export default function Home() {
-  return <ComposerShell />
+  redirect("/compose")
 }

@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import type { FormEvent } from "react"
 import { useEffect, useMemo, useState } from "react"
 import {
@@ -7,9 +8,13 @@ import {
   Loader2,
   MessageSquareText,
   PlugZap,
+  Plus,
   RefreshCw,
+  SquarePen,
+  Star,
   Trash2,
 } from "lucide-react"
+import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -61,7 +66,6 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import { cn } from "@/lib/utils"
 
 type PrimaryView = "compose" | "connectors"
 type ConnectorKind = "codex" | "deepgram"
@@ -224,11 +228,8 @@ function connectorRows(plan: ConnectorPlan): ConnectorRow[] {
   )
 }
 
-export function ComposerShell() {
-  const [primaryView, setPrimaryView] = useState<PrimaryView>("compose")
+export function ComposerShell({ activeView }: { activeView: PrimaryView }) {
   const [plan, setPlan] = useState<ConnectorPlan>(EMPTY_PLAN)
-  const [notice, setNotice] = useState("")
-  const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [composeDraft, setComposeDraft] = useState("")
@@ -244,6 +245,7 @@ export function ComposerShell() {
   const [deepgramApiKey, setDeepgramApiKey] = useState("")
 
   const rows = useMemo(() => connectorRows(plan), [plan])
+  const viewLabel = activeView === "compose" ? "Compose" : "Connectors"
 
   useEffect(() => {
     void loadPlan()
@@ -282,13 +284,11 @@ export function ComposerShell() {
 
   async function runAction(actionId: string, action: () => Promise<void>) {
     setBusyAction(actionId)
-    setError("")
-    setNotice("")
 
     try {
       await action()
     } catch (actionError) {
-      setError(
+      toast.error(
         actionError instanceof Error
           ? actionError.message
           : "Something went wrong."
@@ -300,13 +300,12 @@ export function ComposerShell() {
 
   async function loadPlan() {
     setLoading(true)
-    setError("")
 
     try {
       const nextPlan = await connectorRequest<ConnectorPlan>("/api/connectors")
       setPlan(nextPlan)
     } catch (loadError) {
-      setError(
+      toast.error(
         loadError instanceof Error
           ? loadError.message
           : "Could not load connectors."
@@ -329,8 +328,8 @@ export function ComposerShell() {
           method: "PATCH",
         }
       )
-      setNotice("Connector updated.")
       await loadPlan()
+      toast.success("Saved")
     })
   }
 
@@ -339,8 +338,8 @@ export function ComposerShell() {
       await connectorRequest(`/api/connectors/${kind}/connections/${connection.id}`, {
         method: "DELETE",
       })
-      setNotice(`${connection.name} removed.`)
       await loadPlan()
+      toast.success("Removed")
     })
   }
 
@@ -350,8 +349,8 @@ export function ComposerShell() {
         `/api/connectors/codex/connections/${connection.id}/refresh`,
         { method: "POST" }
       )
-      setNotice(`${connection.name} refreshed.`)
       await loadPlan()
+      toast.success("Refreshed")
     })
   }
 
@@ -364,7 +363,7 @@ export function ComposerShell() {
       )
       setCodexAuthorization(authorization)
       setCodexCallbackInput("")
-      setNotice("Codex login ready.")
+      toast.success("Ready")
     })
   }
 
@@ -372,7 +371,7 @@ export function ComposerShell() {
     event.preventDefault()
 
     if (!codexAuthorization) {
-      setError("Start Codex login first.")
+      toast.error("Start login first.")
       return
     }
 
@@ -392,8 +391,8 @@ export function ComposerShell() {
       setCodexCallbackInput("")
       setCodexName("")
       setConnectorSheetOpen(false)
-      setNotice("Codex added.")
       await loadPlan()
+      toast.success("Added")
     })
   }
 
@@ -415,47 +414,28 @@ export function ComposerShell() {
       setDeepgramApiKey("")
       setDeepgramName("")
       setConnectorSheetOpen(false)
-      setNotice("Deepgram added.")
       await loadPlan()
+      toast.success("Added")
     })
   }
 
   return (
     <SidebarProvider>
-      <ComposerSidebar
-        activeView={primaryView}
-        connectorCount={rows.length}
-        onViewChange={setPrimaryView}
-      />
+      <ComposerSidebar activeView={activeView} connectorCount={rows.length} />
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger type="button" />
           <Separator orientation="vertical" className="mx-1 h-4" />
-          <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">Composer</span>
-            <span>/</span>
-            <span className="capitalize">{primaryView}</span>
+          <div className="flex min-w-0 items-center text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{viewLabel}</span>
           </div>
         </header>
         <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 sm:p-6">
-          {(notice || error) && (
-            <div
-              className={cn(
-                "border-l-2 px-3 py-2 text-sm",
-                error
-                  ? "border-destructive text-destructive"
-                  : "border-primary text-foreground"
-              )}
-              role={error ? "alert" : "status"}
-            >
-              {error || notice}
-            </div>
-          )}
-
-          {primaryView === "compose" ? (
+          {activeView === "compose" ? (
             <ComposeView
               composeDraft={composeDraft}
               onComposeDraftChange={setComposeDraft}
+              onNewCompose={() => setComposeDraft("")}
             />
           ) : (
             <ConnectorsTableView
@@ -498,34 +478,27 @@ export function ComposerShell() {
 function ComposerSidebar({
   activeView,
   connectorCount,
-  onViewChange,
 }: {
   activeView: PrimaryView
   connectorCount: number
-  onViewChange: (view: PrimaryView) => void
 }) {
   const { setOpenMobile } = useSidebar()
-
-  function chooseView(view: PrimaryView) {
-    onViewChange(view)
-    setOpenMobile(false)
-  }
+  const closeMobileSidebar = () => setOpenMobile(false)
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              onClick={() => chooseView("compose")}
-              size="lg"
-              tooltip="Composer"
-              type="button"
-            >
-              <span className="flex size-6 items-center justify-center rounded-sm bg-sidebar-primary text-sidebar-primary-foreground">
-                C
-              </span>
-              <span>Composer</span>
+            <SidebarMenuButton asChild size="lg" tooltip="Compose">
+              <Link href="/compose" onClick={closeMobileSidebar}>
+                <span className="flex size-6 items-center justify-center rounded-sm bg-sidebar-primary text-sidebar-primary-foreground">
+                  C
+                </span>
+                <span className="group-data-[collapsible=icon]:hidden">
+                  Composer
+                </span>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -537,24 +510,26 @@ function ComposerSidebar({
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
+                  asChild
                   isActive={activeView === "compose"}
-                  onClick={() => chooseView("compose")}
                   tooltip="Compose"
-                  type="button"
                 >
-                  <MessageSquareText />
-                  <span>Compose</span>
+                  <Link href="/compose" onClick={closeMobileSidebar}>
+                    <MessageSquareText />
+                    <span>Compose</span>
+                  </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
+                  asChild
                   isActive={activeView === "connectors"}
-                  onClick={() => chooseView("connectors")}
                   tooltip="Connectors"
-                  type="button"
                 >
-                  <PlugZap />
-                  <span>Connectors</span>
+                  <Link href="/connectors" onClick={closeMobileSidebar}>
+                    <PlugZap />
+                    <span>Connectors</span>
+                  </Link>
                 </SidebarMenuButton>
                 <SidebarMenuBadge>{connectorCount}</SidebarMenuBadge>
               </SidebarMenuItem>
@@ -570,15 +545,29 @@ function ComposerSidebar({
 function ComposeView({
   composeDraft,
   onComposeDraftChange,
+  onNewCompose,
 }: {
   composeDraft: string
   onComposeDraftChange: (value: string) => void
+  onNewCompose: () => void
 }) {
   return (
     <section className="grid min-h-[calc(100svh-6.5rem)] min-w-0 grid-rows-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:grid-rows-1">
       <section className="flex min-h-0 min-w-0 flex-col pb-4 lg:pb-0 lg:pr-6">
-        <header className="px-1 pb-3 text-xs font-semibold tracking-wider uppercase">
-          Writing
+        <header className="flex items-center justify-between gap-2 px-1 pb-3">
+          <span className="text-xs font-semibold tracking-wider uppercase">
+            Writing
+          </span>
+          <Button
+            aria-label="New compose"
+            title="New compose"
+            type="button"
+            size="icon-xs"
+            variant="ghost"
+            onClick={onNewCompose}
+          >
+            <SquarePen />
+          </Button>
         </header>
         <Separator />
         <Textarea
@@ -626,8 +615,14 @@ function ConnectorsTableView({
     <section className="flex min-w-0 flex-col">
       <div className="flex items-center justify-between gap-3 pb-4">
         <h1 className="text-2xl font-semibold tracking-tight">Connectors</h1>
-        <Button type="button" onClick={onAddConnector}>
-          + Connector
+        <Button
+          aria-label="Add connector"
+          title="Add connector"
+          type="button"
+          size="icon-sm"
+          onClick={onAddConnector}
+        >
+          <Plus />
         </Button>
       </div>
       <Separator />
@@ -746,43 +741,47 @@ function ConnectorTableRow({
             }
           />
           <Button
+            aria-label={`Make ${row.connection.name} primary`}
+            title="Make primary"
             disabled={busyAction === updateAction}
             onClick={() => onUpdate(row.kind, row.connection, { priority: 1 })}
-            size="xs"
+            size="icon-xs"
             type="button"
             variant="outline"
           >
-            Primary
+            <Star />
           </Button>
           {row.kind === "codex" ? (
             <Button
+              aria-label={`Refresh ${row.connection.name}`}
+              title="Refresh"
               disabled={busyAction === `codex:refresh:${row.connection.id}`}
               onClick={() => onRefreshCodex(row.connection)}
-              size="xs"
+              size="icon-xs"
               type="button"
               variant="outline"
             >
               {busyAction === `codex:refresh:${row.connection.id}` ? (
-                <Loader2 className="animate-spin" data-icon="inline-start" />
+                <Loader2 className="animate-spin" />
               ) : (
-                <RefreshCw data-icon="inline-start" />
+                <RefreshCw />
               )}
-              Refresh
             </Button>
           ) : null}
           <Button
+            aria-label={`Delete ${row.connection.name}`}
+            title="Delete"
             disabled={busyAction === deleteAction}
             onClick={() => onDelete(row.kind, row.connection)}
-            size="xs"
+            size="icon-xs"
             type="button"
             variant="destructive"
           >
             {busyAction === deleteAction ? (
-              <Loader2 className="animate-spin" data-icon="inline-start" />
+              <Loader2 className="animate-spin" />
             ) : (
-              <Trash2 data-icon="inline-start" />
+              <Trash2 />
             )}
-            Delete
           </Button>
         </div>
       </TableCell>
