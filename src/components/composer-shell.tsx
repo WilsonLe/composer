@@ -441,10 +441,10 @@ export function ComposerShell() {
           {(notice || error) && (
             <div
               className={cn(
-                "border px-4 py-3 text-sm",
+                "border-l-2 px-3 py-2 text-sm",
                 error
-                  ? "border-destructive/25 bg-destructive/5 text-destructive"
-                  : "border-primary/20 bg-primary/5 text-foreground"
+                  ? "border-destructive text-destructive"
+                  : "border-primary text-foreground"
               )}
               role={error ? "alert" : "status"}
             >
@@ -575,22 +575,26 @@ function ComposeView({
   onComposeDraftChange: (value: string) => void
 }) {
   return (
-    <section className="grid min-h-[calc(100svh-6.5rem)] min-w-0 grid-rows-2 gap-4 lg:grid-cols-2 lg:grid-rows-1">
-      <section className="flex min-h-0 min-w-0 flex-col border bg-card">
-        <header className="border-b px-4 py-3 text-xs font-semibold tracking-wider uppercase">
+    <section className="grid min-h-[calc(100svh-6.5rem)] min-w-0 grid-rows-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:grid-rows-1">
+      <section className="flex min-h-0 min-w-0 flex-col pb-4 lg:pb-0 lg:pr-6">
+        <header className="px-1 pb-3 text-xs font-semibold tracking-wider uppercase">
           Writing
         </header>
+        <Separator />
         <Textarea
           aria-label="Writing"
-          className="min-h-0 flex-1 resize-none border-0 p-4 focus-visible:border-transparent"
+          className="min-h-0 flex-1 resize-none border-0 px-1 py-4 focus-visible:border-transparent"
           value={composeDraft}
           onChange={(event) => onComposeDraftChange(event.target.value)}
         />
       </section>
-      <section className="flex min-h-0 min-w-0 flex-col border bg-card">
-        <header className="border-b px-4 py-3 text-xs font-semibold tracking-wider uppercase">
+      <Separator className="lg:hidden" />
+      <Separator className="hidden lg:block" orientation="vertical" />
+      <section className="flex min-h-0 min-w-0 flex-col pt-4 lg:pt-0 lg:pl-6">
+        <header className="px-1 pb-3 text-xs font-semibold tracking-wider uppercase">
           AI Chat history
         </header>
+        <Separator />
         <div aria-label="AI Chat history" className="min-h-0 flex-1" />
       </section>
     </section>
@@ -619,54 +623,53 @@ function ConnectorsTableView({
   rows: ConnectorRow[]
 }) {
   return (
-    <section className="flex min-w-0 flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
+    <section className="flex min-w-0 flex-col">
+      <div className="flex items-center justify-between gap-3 pb-4">
         <h1 className="text-2xl font-semibold tracking-tight">Connectors</h1>
         <Button type="button" onClick={onAddConnector}>
           + Connector
         </Button>
       </div>
+      <Separator />
 
-      <div className="min-w-0 overflow-x-auto rounded-none border">
-        <Table>
-          <TableHeader>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Connector</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Account</TableHead>
+            <TableHead>Credential Metadata</TableHead>
+            <TableHead>Created At</TableHead>
+            <TableHead>Updated At</TableHead>
+            <TableHead className="sticky right-0 bg-background text-right">
+              Actions
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.length ? (
+            rows.map((row) => (
+              <ConnectorTableRow
+                busyAction={busyAction}
+                key={`${row.kind}:${row.connection.id}`}
+                row={row}
+                onDelete={onDelete}
+                onRefreshCodex={onRefreshCodex}
+                onUpdate={onUpdate}
+              />
+            ))
+          ) : (
             <TableRow>
-              <TableHead>Connector</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Account</TableHead>
-              <TableHead>Credential Metadata</TableHead>
-              <TableHead>Created At</TableHead>
-              <TableHead>Updated At</TableHead>
-              <TableHead className="sticky right-0 bg-background text-right">
-                Actions
-              </TableHead>
+              <TableCell
+                className="h-24 text-left text-muted-foreground md:text-center"
+                colSpan={7}
+              >
+                {loading ? "Loading connectors…" : "No connectors yet."}
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length ? (
-              rows.map((row) => (
-                <ConnectorTableRow
-                  busyAction={busyAction}
-                  key={`${row.kind}:${row.connection.id}`}
-                  row={row}
-                  onDelete={onDelete}
-                  onRefreshCodex={onRefreshCodex}
-                  onUpdate={onUpdate}
-                />
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  className="h-24 text-center text-muted-foreground"
-                  colSpan={7}
-                >
-                  {loading ? "Loading connectors…" : "No connectors yet."}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+          )}
+        </TableBody>
+      </Table>
     </section>
   )
 }
@@ -834,23 +837,22 @@ function ConnectorSheet({
         <SheetHeader>
           <SheetTitle>Connector</SheetTitle>
         </SheetHeader>
-        <div className="flex flex-col gap-8 px-8 pb-8">
-          <FieldGroup className="gap-6">
-            <Field>
-              <FieldLabel>Provider</FieldLabel>
-              <Select value={provider} onValueChange={onProviderChange}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="codex">OpenAI Codex</SelectItem>
-                    <SelectItem value="deepgram">Deepgram</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-          </FieldGroup>
+        <div className="flex flex-col gap-6 px-8 pb-8">
+          <Field>
+            <FieldLabel>Provider</FieldLabel>
+            <Select value={provider} onValueChange={onProviderChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="codex">OpenAI Codex</SelectItem>
+                  <SelectItem value="deepgram">Deepgram</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Separator />
 
           {provider === "codex" ? (
             <CodexConnectorForm
@@ -901,18 +903,16 @@ function CodexConnectorForm({
   onStartAuthorization: (event: FormEvent<HTMLFormElement>) => void
 }) {
   return (
-    <div className="flex flex-col gap-6">
+    <>
       <form className="flex flex-col gap-5" onSubmit={onStartAuthorization}>
-        <FieldGroup className="gap-5">
-          <Field>
-            <FieldLabel htmlFor="codex-name">Name</FieldLabel>
-            <Input
-              id="codex-name"
-              value={name}
-              onChange={(event) => onNameChange(event.target.value)}
-            />
-          </Field>
-        </FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="codex-name">Name</FieldLabel>
+          <Input
+            id="codex-name"
+            value={name}
+            onChange={(event) => onNameChange(event.target.value)}
+          />
+        </Field>
         <Button disabled={busyAction === "codex:start"} type="submit">
           {busyAction === "codex:start" ? (
             <Loader2 className="animate-spin" data-icon="inline-start" />
@@ -922,14 +922,15 @@ function CodexConnectorForm({
       </form>
 
       {authorization ? (
-        <form className="flex flex-col gap-5" onSubmit={onCompleteAuthorization}>
-          <Button asChild type="button" variant="outline">
-            <a href={authorization.authUrl} target="_blank" rel="noreferrer">
-              <ExternalLink data-icon="inline-start" />
-              Open Codex login
-            </a>
-          </Button>
-          <FieldGroup className="gap-5">
+        <>
+          <Separator />
+          <form className="flex flex-col gap-5" onSubmit={onCompleteAuthorization}>
+            <Button asChild type="button" variant="outline">
+              <a href={authorization.authUrl} target="_blank" rel="noreferrer">
+                <ExternalLink data-icon="inline-start" />
+                Open Codex login
+              </a>
+            </Button>
             <Field>
               <FieldLabel htmlFor="codex-callback">Callback URL</FieldLabel>
               <Textarea
@@ -941,19 +942,19 @@ function CodexConnectorForm({
                 }
               />
             </Field>
-          </FieldGroup>
-          <Button
-            disabled={busyAction === "codex:complete" || !callbackInput}
-            type="submit"
-          >
-            {busyAction === "codex:complete" ? (
-              <Loader2 className="animate-spin" data-icon="inline-start" />
-            ) : null}
-            Complete Codex login
-          </Button>
-        </form>
+            <Button
+              disabled={busyAction === "codex:complete" || !callbackInput}
+              type="submit"
+            >
+              {busyAction === "codex:complete" ? (
+                <Loader2 className="animate-spin" data-icon="inline-start" />
+              ) : null}
+              Complete Codex login
+            </Button>
+          </form>
+        </>
       ) : null}
-    </div>
+    </>
   )
 }
 
