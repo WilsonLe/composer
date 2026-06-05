@@ -11,7 +11,7 @@ ENV_PATH="$CONFIG_DIR/composer.env"
 UNIT_PATH="$SYSTEMD_USER_DIR/$SERVICE_NAME.service"
 UNIT_TEMPLATE="$APP_DIR/ops/systemd/composer.service.template"
 ENV_TEMPLATE="$APP_DIR/ops/composer.env.example"
-PORT="${COMPOSER_PORT:-3000}"
+PORT="${COMPOSER_PORT:-42456}"
 HOSTNAME_VALUE="${COMPOSER_HOSTNAME:-127.0.0.1}"
 
 if [[ -z "${XDG_RUNTIME_DIR:-}" && -d "/run/user/$(id -u)" ]]; then
@@ -101,7 +101,7 @@ ensure_env_file() {
 NODE_ENV=production
 NEXT_TELEMETRY_DISABLED=1
 PORT=$PORT
-HOSTNAME=$HOSTNAME_VALUE
+COMPOSER_HOSTNAME=$HOSTNAME_VALUE
 CONNECTOR_STORE_PATH=$DATA_DIR/connectors.json
 COMPOSER_CONFIG_DIR=$CONFIG_DIR
 COMPOSER_DATA_DIR=$DATA_DIR
@@ -116,7 +116,7 @@ EOF
   ensure_env_assignment NODE_ENV production
   ensure_env_assignment NEXT_TELEMETRY_DISABLED 1
   ensure_env_assignment PORT "$PORT"
-  ensure_env_assignment HOSTNAME "$HOSTNAME_VALUE"
+  ensure_env_assignment COMPOSER_HOSTNAME "$HOSTNAME_VALUE"
   ensure_env_assignment CONNECTOR_STORE_PATH "$DATA_DIR/connectors.json"
   ensure_env_assignment COMPOSER_CONFIG_DIR "$CONFIG_DIR"
   ensure_env_assignment COMPOSER_DATA_DIR "$DATA_DIR"
